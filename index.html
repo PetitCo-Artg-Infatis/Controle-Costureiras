@@ -1397,6 +1397,10 @@ async function exportSpreadsheet(){
 }
 
 /* ================= FECHAR POPOVER AO CLICAR FORA ================= */
+// Usa fase de "captura" (terceiro parâmetro true): esse código roda ANTES dos
+// botões internos do calendário (abas, aplicar, etc.), que reconstroem a tela.
+// Sem isso, ao clicar numa aba o próprio clique era lido como "clique fora"
+// depois que a tela já tinha sido redesenhada, fechando o calendário sozinho.
 document.addEventListener('click', function(e){
   const pop = document.getElementById('period-popover');
   const trig = document.getElementById('period-trigger');
@@ -1404,7 +1408,7 @@ document.addEventListener('click', function(e){
     pop.classList.remove('open');
     state.periodPickerOpen = false;
   }
-});
+}, true);
 
 /* ================= INICIALIZAÇÃO ================= */
 (function init(){
