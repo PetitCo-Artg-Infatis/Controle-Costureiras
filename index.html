@@ -132,6 +132,16 @@
   .month-popover.open{ display:block; }
   .month-popover select{ width:100%; margin-bottom:8px; border:1.5px solid var(--brown-light); border-radius:10px; padding:8px; font-size:14px; color:var(--text); background:var(--white); }
   .month-popover .btn{ width:100%; }
+  .period-popover{ width:236px; }
+  .period-tabs{ display:flex; flex-wrap:wrap; gap:6px; margin-bottom:10px; }
+  .period-tab{ flex:1 1 auto; white-space:nowrap; border:1.5px solid var(--brown-light); border-radius:999px; padding:5px 9px; font-size:11px; font-weight:800; color:var(--brown-dark); background:var(--white); }
+  .period-tab.active{ background:var(--orange); border-color:var(--orange); color:#fff; }
+  .period-fields{ margin-bottom:8px; }
+  .period-fields select, .period-fields input{ width:100%; margin-bottom:8px; border:1.5px solid var(--brown-light); border-radius:10px; padding:8px; font-size:14px; color:var(--text); background:var(--white); }
+  .period-hint{ font-size:12px; font-weight:700; color:var(--brown-light); margin:-4px 0 8px; text-align:center; }
+  .period-range-row{ display:flex; align-items:center; gap:6px; }
+  .period-range-row input{ flex:1; min-width:0; }
+  .period-range-sep{ font-size:11px; font-weight:700; color:var(--brown-light); flex-shrink:0; }
 
   .action-row{ display:flex; gap:8px; margin-bottom:16px; }
   .action-row .btn{ flex:1; }
@@ -283,6 +293,94 @@ function formatDateBR(dateStr){
   const p = dateStr.split("-");
   return p[2]+"/"+p[1]+"/"+p[0];
 }
+
+/* ---------- Períodos de fechamento (dia / semana / mês / ano / personalizado) ---------- */
+function parseISODate(s){
+  const parts = (s||"").split("-").map(Number);
+  return new Date(parts[0], (parts[1]||1)-1, parts[2]||1);
+}
+function addDays(dateObj, n){ const d = new Date(dateObj); d.setDate(d.getDate()+n); return d; }
+function toISO(dateObj){
+  const y=dateObj.getFullYear(), m=String(dateObj.getMonth()+1).padStart(2,'0'), d=String(dateObj.getDate()).padStart(2,'0');
+  return y+'-'+m+'-'+d;
+}
+function startOfWeek(dateStr){
+  const d = parseISODate(dateStr);
+  const dow = d.getDay(); // 0=dom .. 6=sáb
+  const diff = (dow===0) ? -6 : (1-dow); // volta até segunda-feira
+  return addDays(d, diff);
+}
+function buildPeriod(type, params){
+  params = params || {};
+  const today = todayISO();
+  if(type==='day'){
+    const day = params.day || today;
+    return { type:'day', start:day, end:day };
+  }
+  if(type==='week'){
+    const mon = startOfWeek(params.day || today);
+    const sun = addDays(mon, 6);
+    return { type:'week', start:toISO(mon), end:toISO(sun) };
+  }
+  if(type==='year'){
+    const y = params.year || String(new Date().getFullYear());
+    return { type:'year', start:y+'-01-01', end:y+'-12-31' };
+  }
+  if(type==='custom'){
+    let s = params.start || today, e = params.end || today;
+    if(s > e){ const tmp=s; s=e; e=tmp; }
+    return { type:'custom', start:s, end:e };
+  }
+  const y = params.year || String(new Date().getFullYear());
+  const mi = (params.monthIdx!=null) ? params.monthIdx : new Date().getMonth();
+  const lastDay = new Date(Number(y), mi+1, 0).getDate();
+  return { type:'month', start:y+'-'+String(mi+1).padStart(2,'0')+'-01', end:y+'-'+String(mi+1).padStart(2,'0')+'-'+String(lastDay).padStart(2,'0') };
+}
+function initPeriodDraft(period){
+  const today = todayISO();
+  const draft = {
+    day: today, weekAnchor: today,
+    year: String(new Date().getFullYear()), monthIdx: new Date().getMonth(),
+    customStart: today, customEnd: today,
+  };
+  if(period.type==='day') draft.day = period.start;
+  else if(period.type==='week') draft.weekAnchor = period.start;
+  else if(period.type==='year') draft.year = period.start.slice(0,4);
+  else if(period.type==='month'){ draft.year = period.start.slice(0,4); draft.monthIdx = Number(period.start.slice(5,7))-1; }
+  else if(period.type==='custom'){ draft.customStart = period.start; draft.customEnd = period.end; }
+  return draft;
+}
+function entriesInPeriod(period){
+  return state.data.entries.filter(e => e.date && e.date >= period.start && e.date <= period.end);
+}
+function formatPeriodLabel(period){
+  if(period.type==='day') return formatDateBR(period.start);
+  if(period.type==='week') return formatDateBR(period.start)+' a '+formatDateBR(period.end);
+  if(period.type==='year') return period.start.slice(0,4);
+  if(period.type==='month') return formatMonthLabel(period.start.slice(0,7));
+  return formatDateBR(period.start)+' a '+formatDateBR(period.end);
+}
+function periodInSentence(period){
+  if(period.type==='week' || period.type==='custom') return 'no período de '+formatPeriodLabel(period);
+  return 'em '+formatPeriodLabel(period);
+}
+function periodOfSentence(period){
+  if(period.type==='week' || period.type==='custom') return 'do período de '+formatPeriodLabel(period);
+  return 'de '+formatPeriodLabel(period);
+}
+function formatPeriodShort(period){
+  if(period.type==='day') return formatDateBR(period.start);
+  if(period.type==='week') return formatDateBR(period.start).slice(0,5)+'–'+formatDateBR(period.end).slice(0,5);
+  if(period.type==='year') return period.start.slice(0,4);
+  if(period.type==='month') return formatMonthShort(period.start.slice(0,7));
+  return formatDateBR(period.start).slice(0,5)+'–'+formatDateBR(period.end).slice(0,5);
+}
+function periodSlug(period){
+  if(period.type==='day') return period.start;
+  if(period.type==='year') return period.start.slice(0,4);
+  if(period.type==='month') return period.start.slice(0,7);
+  return period.start+'_a_'+period.end;
+}
 function normalize(s){
   return (s||"").normalize("NFD").replace(/[\u0300-\u036f]/g,"").toLowerCase().trim().replace(/\s+/g," ");
 }
@@ -359,7 +457,10 @@ const state = {
   data: { entries:[], seamstresses:[], products:[], prices:{} },
   loading: true,
   view: "form", // form | pin | admin
-  month: currentMonthKey(),
+  period: buildPeriod('month', { year: String(new Date().getFullYear()), monthIdx: new Date().getMonth() }),
+  periodPickerOpen: false,
+  periodPickerType: null,
+  periodPickerDraft: null,
   expandedIds: new Set(),
   confirmDeleteEntry: null,
   confirmDeleteSeamstress: null,
@@ -577,8 +678,7 @@ function bindPinView(){
 
 /* ================= PAINEL ADMINISTRATIVO ================= */
 function computeAdminModel(){
-  const month = state.month;
-  const entriesOfMonth = state.data.entries.filter(e => monthKeyOf(e.date) === month);
+  const entriesOfMonth = entriesInPeriod(state.period);
   const bySeamstress = new Map();
   entriesOfMonth.forEach(e=>{
     if(!bySeamstress.has(e.seamstressId)) bySeamstress.set(e.seamstressId, []);
@@ -630,20 +730,56 @@ function computeMergeSuggestions(){
 
 function productName(id){ const p = state.data.products.find(p=>p.id===id); return p ? p.name : '?'; }
 
-function renderMonthPicker(){
-  const parts = state.month.split('-');
-  const y = parts[0], monthIdx = Number(parts[1])-1;
+const PERIOD_TABS = [
+  { key:'day', label:'Dia' },
+  { key:'week', label:'Semana' },
+  { key:'month', label:'Mês' },
+  { key:'year', label:'Ano' },
+  { key:'custom', label:'Período' },
+];
+
+function renderPeriodPicker(){
+  const p = state.period;
+  const type = state.periodPickerType || p.type;
+  const draft = state.periodPickerDraft || initPeriodDraft(p);
   const curYear = new Date().getFullYear();
   const years = [];
   for(let yy=curYear-1; yy<=curYear+3; yy++) years.push(yy);
-  const monthOptions = MONTHS_PT.map((name,i)=>'<option value="'+i+'"'+(i===monthIdx?' selected':'')+'>'+capitalize(name)+'</option>').join('');
-  const yearOptions = years.map(yy=>'<option value="'+yy+'"'+(String(yy)===y?' selected':'')+'>'+yy+'</option>').join('');
+
+  const tabsHtml = '<div class="period-tabs">'+PERIOD_TABS.map(t=>
+    '<button type="button" class="period-tab'+(type===t.key?' active':'')+'" data-type="'+t.key+'">'+t.label+'</button>'
+  ).join('')+'</div>';
+
+  let fieldsHtml = '';
+  if(type==='day'){
+    fieldsHtml = '<input type="date" id="pp-day" class="input input-sm" value="'+draft.day+'" />';
+  } else if(type==='week'){
+    const mon = startOfWeek(draft.weekAnchor);
+    const sun = addDays(mon,6);
+    fieldsHtml = '<input type="date" id="pp-week" class="input input-sm" value="'+draft.weekAnchor+'" />'+
+      '<p class="period-hint">'+formatDateBR(toISO(mon))+' a '+formatDateBR(toISO(sun))+'</p>';
+  } else if(type==='year'){
+    const yearOptions = years.map(yy=>'<option value="'+yy+'"'+(String(yy)===draft.year?' selected':'')+'>'+yy+'</option>').join('');
+    fieldsHtml = '<select id="pp-year-only" class="input input-sm">'+yearOptions+'</select>';
+  } else if(type==='custom'){
+    fieldsHtml = '<div class="period-range-row">'+
+      '<input type="date" id="pp-custom-start" class="input input-sm" value="'+draft.customStart+'" />'+
+      '<span class="period-range-sep">até</span>'+
+      '<input type="date" id="pp-custom-end" class="input input-sm" value="'+draft.customEnd+'" />'+
+    '</div>';
+  } else {
+    const monthOptions = MONTHS_PT.map((name,i)=>'<option value="'+i+'"'+(i===draft.monthIdx?' selected':'')+'>'+capitalize(name)+'</option>').join('');
+    const yearOptions = years.map(yy=>'<option value="'+yy+'"'+(String(yy)===draft.year?' selected':'')+'>'+yy+'</option>').join('');
+    fieldsHtml = '<select id="pop-month" class="input input-sm">'+monthOptions+'</select>'+
+      '<select id="pop-year" class="input input-sm">'+yearOptions+'</select>';
+  }
+
   return ''+
     '<div class="month-picker">'+
-      '<button id="month-trigger" class="month-trigger">'+icon('calendar',14)+' '+formatMonthShort(state.month)+' '+icon('chevronDown',13)+'</button>'+
-      '<div id="month-popover" class="month-popover">'+
-        '<select id="pop-month">'+monthOptions+'</select>'+
-        '<select id="pop-year">'+yearOptions+'</select>'+
+      '<button id="period-trigger" class="month-trigger">'+icon('calendar',14)+' '+formatPeriodShort(p)+' '+icon('chevronDown',13)+'</button>'+
+      '<div id="period-popover" class="month-popover period-popover'+(state.periodPickerOpen?' open':'')+'">'+
+        tabsHtml+
+        '<div class="period-fields">'+fieldsHtml+'</div>'+
         '<button id="pop-apply" class="btn btn-primary">Aplicar</button>'+
       '</div>'+
     '</div>';
@@ -658,7 +794,7 @@ function renderAdminView(){
   html += '<button id="admin-exit" class="back-btn">'+icon('logOut',19)+'</button>';
   html += '<img class="brand-mark" style="width:32px;height:32px;" src="'+PENGUIN_IMG+'" alt="Petit & Co." />';
   html += '<div class="brand-text"><h1 class="brand-title font-display" style="font-size:15px;">Painel administrativo</h1></div>';
-  html += renderMonthPicker();
+  html += renderPeriodPicker();
   html += '</header>';
 
   html += '<main class="main">';
@@ -673,7 +809,7 @@ function renderAdminView(){
   html += '<div class="card msg-card">';
   html += '<h3 class="section-label">'+icon('send',12)+' Mensagem para costureira</h3>';
   if(model.seamstresses.length === 0){
-    html += '<p class="msg-empty">Nenhuma costureira com registros em '+formatMonthLabel(state.month)+'.</p>';
+    html += '<p class="msg-empty">Nenhuma costureira com registros '+periodInSentence(state.period)+'.</p>';
   } else {
     if(!state.msgSelectedSeamstressId || !model.seamstresses.some(s=>s.id===state.msgSelectedSeamstressId)){
       state.msgSelectedSeamstressId = model.seamstresses[0].id;
@@ -710,14 +846,14 @@ function renderAdminView(){
   }
 
   html += '<div class="charts-section">';
-  html += '<div class="chart-card"><p class="chart-title">Produção por costureira — '+formatMonthLabel(state.month)+'</p><div class="chart-box"><canvas id="chart-by-seamstress"></canvas></div></div>';
-  html += '<div class="chart-card"><p class="chart-title">Produção ao longo de '+state.month.split('-')[0]+'</p><div class="chart-box"><canvas id="chart-by-month"></canvas></div></div>';
+  html += '<div class="chart-card"><p class="chart-title">Produção por costureira — '+formatPeriodLabel(state.period)+'</p><div class="chart-box"><canvas id="chart-by-seamstress"></canvas></div></div>';
+  html += '<div class="chart-card"><p class="chart-title">Produção ao longo de '+state.period.start.slice(0,4)+'</p><div class="chart-box"><canvas id="chart-by-month"></canvas></div></div>';
   html += '</div>';
 
   if(model.seamstresses.length === 0){
     html += '<div class="empty-state">'+
       '<img src="'+PENGUIN_IMG+'" style="width:56px;height:56px;object-fit:contain;" />'+
-      '<p>Nenhum registro em '+formatMonthLabel(state.month)+'.</p>'+
+      '<p>Nenhum registro '+periodInSentence(state.period)+'.</p>'+
     '</div>';
   } else {
     html += '<div class="seam-list">';
@@ -814,14 +950,46 @@ function renderAdminView(){
 function bindAdminView(){
   $('#admin-exit').addEventListener('click', ()=>{ state.view='form'; renderApp(); });
 
-  $('#month-trigger').addEventListener('click', (e)=>{
+  $('#period-trigger').addEventListener('click', (e)=>{
     e.stopPropagation();
-    $('#month-popover').classList.toggle('open');
+    if(!state.periodPickerOpen){
+      state.periodPickerType = state.period.type;
+      state.periodPickerDraft = initPeriodDraft(state.period);
+    }
+    state.periodPickerOpen = !state.periodPickerOpen;
+    renderApp();
   });
+  $all('.period-tab').forEach(btn=>{
+    btn.addEventListener('click', ()=>{
+      state.periodPickerType = btn.dataset.type;
+      renderApp();
+    });
+  });
+  const ppDay = $('#pp-day');
+  if(ppDay) ppDay.addEventListener('change', ()=>{ state.periodPickerDraft.day = ppDay.value; });
+  const ppWeek = $('#pp-week');
+  if(ppWeek) ppWeek.addEventListener('change', ()=>{ state.periodPickerDraft.weekAnchor = ppWeek.value; renderApp(); });
+  const ppYearOnly = $('#pp-year-only');
+  if(ppYearOnly) ppYearOnly.addEventListener('change', ()=>{ state.periodPickerDraft.year = ppYearOnly.value; });
+  const ppCustomStart = $('#pp-custom-start');
+  if(ppCustomStart) ppCustomStart.addEventListener('change', ()=>{ state.periodPickerDraft.customStart = ppCustomStart.value; });
+  const ppCustomEnd = $('#pp-custom-end');
+  if(ppCustomEnd) ppCustomEnd.addEventListener('change', ()=>{ state.periodPickerDraft.customEnd = ppCustomEnd.value; });
+  const popMonth = $('#pop-month');
+  if(popMonth) popMonth.addEventListener('change', ()=>{ state.periodPickerDraft.monthIdx = Number(popMonth.value); });
+  const popYear = $('#pop-year');
+  if(popYear) popYear.addEventListener('change', ()=>{ state.periodPickerDraft.year = popYear.value; });
   $('#pop-apply').addEventListener('click', ()=>{
-    const mi = Number($('#pop-month').value);
-    const yy = $('#pop-year').value;
-    state.month = yy + '-' + String(mi+1).padStart(2,'0');
+    const type = state.periodPickerType || state.period.type;
+    const draft = state.periodPickerDraft || {};
+    let params = {};
+    if(type==='day') params = { day: draft.day };
+    else if(type==='week') params = { day: draft.weekAnchor };
+    else if(type==='year') params = { year: draft.year };
+    else if(type==='custom') params = { start: draft.customStart, end: draft.customEnd };
+    else params = { year: draft.year, monthIdx: draft.monthIdx };
+    state.period = buildPeriod(type, params);
+    state.periodPickerOpen = false;
     renderApp();
   });
 
@@ -1029,7 +1197,7 @@ function buildWhatsAppMessage(s){
   s.entries.forEach(e=>{
     grouped.set(e.productId, (grouped.get(e.productId)||0) + e.quantity);
   });
-  let lines = ['Oi, '+s.name.split(' ')[0]+'! Segue o fechamento de '+formatMonthLabel(state.month)+':', ''];
+  let lines = ['Oi, '+s.name.split(' ')[0]+'! Segue o fechamento '+periodOfSentence(state.period)+':', ''];
   grouped.forEach((qty, pid)=>{
     const price = state.data.prices[priceKey(s.id, pid)] || 0;
     lines.push('- '+qty+'x '+productName(pid)+' = '+toBRL(price*qty));
@@ -1099,7 +1267,7 @@ function renderCharts(){
     }
   });
 
-  const year = state.month.split('-')[0];
+  const year = state.period.start.slice(0,4);
   const seamstressIdsThisYear = new Set();
   state.data.entries.forEach(e=>{ if(e.date && e.date.indexOf(year+'-')===0) seamstressIdsThisYear.add(e.seamstressId); });
   const series = Array.from(seamstressIdsThisYear).map((id,idx)=>{
@@ -1141,7 +1309,7 @@ function exportCSVFallback(model){
     });
     rows.push([s.name + ' - TOTAL', '', '', '', '', toBRL(s.total)]);
   });
-  downloadCSV('fechamento-'+state.month+'.csv', ['Costureira','Produto','Quantidade','Data','Preço/un','Subtotal'], rows);
+  downloadCSV('fechamento-'+periodSlug(state.period)+'.csv', ['Costureira','Produto','Quantidade','Data','Preço/un','Subtotal'], rows);
 }
 
 async function exportSpreadsheet(){
@@ -1157,11 +1325,12 @@ async function exportSpreadsheet(){
   try{
     const wb = new ExcelJS.Workbook();
     wb.creator = 'Petit & Co.';
-    const ws = wb.addWorksheet(formatMonthLabel(state.month).slice(0,28), { views:[{ state:'frozen', ySplit:3, showGridLines:false }] });
+    const sheetName = formatPeriodLabel(state.period).replace(/[\\\/\?\*\[\]:]/g, '-').slice(0,28);
+    const ws = wb.addWorksheet(sheetName, { views:[{ state:'frozen', ySplit:3, showGridLines:false }] });
 
     ws.mergeCells('A1:F1');
     const titleCell = ws.getCell('A1');
-    titleCell.value = 'Petit & Co. — Fechamento de ' + formatMonthLabel(state.month);
+    titleCell.value = 'Petit & Co. — Fechamento ' + periodOfSentence(state.period);
     titleCell.font = { name:'Calibri', size:16, bold:true, color:{ argb:'FFFFFFFF' } };
     titleCell.fill = { type:'pattern', pattern:'solid', fgColor:{ argb:'FF7A5A42' } };
     titleCell.alignment = { vertical:'middle', horizontal:'center' };
@@ -1218,7 +1387,7 @@ async function exportSpreadsheet(){
 
     const buf = await wb.xlsx.writeBuffer();
     const blob = new Blob([buf], { type:'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' });
-    triggerDownload(blob, 'fechamento-petit-co-'+state.month+'.xlsx');
+    triggerDownload(blob, 'fechamento-petit-co-'+periodSlug(state.period)+'.xlsx');
     showToast('Planilha baixada!');
   }catch(err){
     console.error('Erro ao gerar planilha estilizada, usando CSV.', err);
@@ -1229,10 +1398,11 @@ async function exportSpreadsheet(){
 
 /* ================= FECHAR POPOVER AO CLICAR FORA ================= */
 document.addEventListener('click', function(e){
-  const pop = document.getElementById('month-popover');
-  const trig = document.getElementById('month-trigger');
+  const pop = document.getElementById('period-popover');
+  const trig = document.getElementById('period-trigger');
   if(pop && pop.classList.contains('open') && !pop.contains(e.target) && e.target!==trig && !trig.contains(e.target)){
     pop.classList.remove('open');
+    state.periodPickerOpen = false;
   }
 });
 
